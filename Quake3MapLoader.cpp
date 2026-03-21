@@ -51,13 +51,7 @@ Quake3Map::Quake3Map(const std::string& fileName, NCL::Rendering::Mesh* inMesh) 
 	uint32_t numVertices = meshVertices.size();
 	uint32_t numIndices  = meshIndices.size(); 
 
-	int patchVertices = 0;
-	int patchIndices  = 0;
-
-	//CalculateTotalPatchSize(patchVertices, patchIndices, faces, numFaces);
-
-	numVertices += patchVertices;
-	numIndices  += patchIndices;
+	CalculateTotalPatchSize(numVertices, numIndices);
 
 	vPos.resize(numVertices);
 	vNorm.resize(numVertices);
@@ -66,19 +60,13 @@ Quake3Map::Quake3Map(const std::string& fileName, NCL::Rendering::Mesh* inMesh) 
 	vTex2.resize(numVertices);
 	indices.resize(numIndices);
 
-	//ProcessPatches(faces, numFaces);
-
-	BuildVertexData(patchVertices, patchIndices);
-	BuildSubmeshes(patchVertices, patchIndices);
+	CopyVertexData();
+	ProcessFaces();
 	f.close();
 
 	visibleFaceIndices = new int[faces.size()];
 
 	ComputeMaximumSizes();
-
-	//delete lightmaps; lightmaps = 0;//done with this now
-
-	//FinaliseMesh(true, true, filename);
 
 	mesh->SetVertexPositions(vPos);
 	mesh->SetVertexNormals(vNorm);
@@ -121,9 +109,10 @@ void  Quake3Map::ParseVisDataLump(std::ifstream& f, int chunkSize, int chunkOffs
 	f.read((char*)visData.data, visData.numVectors * visData.vectorSize);
 }
 
-void Quake3Map::BuildSubmeshes(int startVertex, int startIndex) {
-	int vOffset = 0;
-	int iOffset = 0;
+void Quake3Map::ProcessFaces() {
+	//new verts/inds from beziers get tacked onto the end of the vertex list
+	int vOffset = meshVertices.size();
+	int iOffset = meshIndices.size();
 
 	for (int f = 0; f < faces.size(); ++f) {
 		Q3BSPFace& face = faces[f];
@@ -131,138 +120,116 @@ void Quake3Map::BuildSubmeshes(int startVertex, int startIndex) {
 		SubMesh newSubMesh;
 
 		if (face.type == 2) {
-			////Bezier face
-			//int vCount = 0;
-			//int iCount = 0;
+			//Bezier face
+			//We need to create some new verts/inds to represent the curve
+			 
+			uint32_t vCount = 0;
+			uint32_t iCount = 0;
 
-			//CalculatePatchSize(vCount, iCount, faces, f);
+			CalculatePatchSize(vCount, iCount, face);
 
-			////newSubMesh.numVertices = vCount;
-			////newSubMesh.numIndices = iCount;
+			newSubMesh.start	= iOffset;
+			newSubMesh.count	= iCount;
+			newSubMesh.base		= vOffset;
 
-			//newSubMesh.start	= iOffset;
-			//newSubMesh.base		= 0;// vOffset;
-			//newSubMesh.count	= iCount;
+			//now to make the actual new bezier verts
+			Q3BSPVertex* controlPoints = &meshVertices[face.firstVertex];
 
-			//vOffset += vCount;
-			//iOffset += iCount;
+			int numX = (face.patchSize[0] - 1) / 2;
+			int numY = (face.patchSize[1] - 1) / 2;
+
+			uint32_t vertOffset = vOffset;
+			uint32_t indexOffset = iOffset;
+
+			for (int x = 0; x < numX; ++x) {
+				for (int y = 0; y < numY; ++y) {
+					int startX = x * 2;
+					int startY = y * 2;
+
+					int row0 = (face.patchSize[0] * startY) + startX;
+
+					int row1 = (face.patchSize[0] * (startY + 1)) + startX;
+					int row2 = (face.patchSize[0] * (startY + 2)) + startX;
+
+					ComputeQuadBezier(CURVE_SUBDVISIONS, face,
+						controlPoints[row0], controlPoints[row0 + 1], controlPoints[row0 + 2],
+						controlPoints[row1], controlPoints[row1 + 1], controlPoints[row1 + 2],
+						controlPoints[row2], controlPoints[row2 + 1], controlPoints[row2 + 2],
+						&vPos[vertOffset], &vNorm[vertOffset]/*, &tangents[currentVertex]*/, &vTex[vertOffset], &vTex2[vertOffset], &indices[indexOffset]
+					);
+					vertOffset  += CURVE_SUBDVISIONS * CURVE_SUBDVISIONS;
+					indexOffset += (CURVE_SUBDVISIONS - 1) * (CURVE_SUBDVISIONS - 1) * 6;
+				}
+			}
+			numProcessedCurveFaces++;
+			vOffset += vCount;
+			iOffset += iCount;
 		}
 		else {
 			//Normal face
-			for (int j = face.firstVertex + startVertex; j < face.firstVertex + startVertex + face.numVertices; ++j) {
-				vTex2[j].y += (face.lightmapIndex + 1);
-			}
-
-			//newSubMesh.numVertices = face.numVertices;
-			//newSubMesh.numIndices = face.numIndices;
+			// I think this was my index hack...
+			//for (int j = face.firstVertex; j < face.firstVertex + face.numVertices; ++j) {
+			//	vTex2[j].y += (face.lightmapIndex + 1);
+			//}
+			//Standard faces have their verts in the initial ver
+			newSubMesh.start	= face.firstIndex;
 			newSubMesh.count	= face.numIndices;
-			newSubMesh.start	= face.firstIndex + startIndex;
-			newSubMesh.base		= face.firstVertex + startVertex;
+			newSubMesh.base		= face.firstVertex;
 		}
 
 		mesh->AddSubMesh(newSubMesh);
 	}
 }
 
-void Quake3Map::BuildVertexData(int startVertex, int startIndex) {
-	//int oldVertexCount = numVertices - startVertex;
-	//int oldIndexCount = numIndices - startIndex;
-
+void Quake3Map::CopyVertexData() {
 	for (int i = 0; i < meshIndices.size(); ++i) {
-		indices[startIndex + i] = meshIndices[	i].offset;
+		indices[i] = meshIndices[	i].offset;
 	}
 
 	for (int i = 0; i < meshVertices.size(); ++i) {
 		Q3BSPVertex& v = meshVertices[i];
 
-		vPos[startVertex + i]	= Vector3(v.position[0], v.position[2], -v.position[1]);
-		vNorm[startVertex + i]	= Vector3(v.normal[0], v.normal[2], -v.normal[1]);
-		vCol[startVertex + i]	= Vector4(v.colour[0] / 255.0f, v.colour[1] / 255.0f, v.colour[2] / 255.0f, v.colour[3] / 255.0f);
+		vPos[i]		= Vector3(v.position[0], v.position[2], -v.position[1]);
+		vNorm[i]	= Vector3(v.normal[0], v.normal[2], -v.normal[1]);
+		vCol[i]		= Vector4(v.colour[0] / 255.0f, v.colour[1] / 255.0f, v.colour[2] / 255.0f, v.colour[3] / 255.0f);
 
-		vTex[startVertex + i]	= Vector2(v.diffuseTex[0], v.diffuseTex[1]);
-		vTex2[startVertex + i]  = Vector2(v.lightmapTex[0], v.lightmapTex[1]);
+		vTex[i]		= Vector2(v.diffuseTex[0], v.diffuseTex[1]);
+		vTex2[i]	= Vector2(v.lightmapTex[0], v.lightmapTex[1]);
 	}
 }
 
-void	Quake3Map::CalculatePatchSize(int& vertexCount, int& indexCount, Q3BSPFace* faces, int index) {
-	Q3BSPFace& face = faces[index];
-	int maxVertCount = 0;
-	int maxIndCount = 0;
-
+void	Quake3Map::CalculatePatchSize(uint32_t& vertexCount, uint32_t& indexCount, const Q3BSPFace& face) {
 	if (face.type != 2) {
 		return;
 	}
-
-	numCountedCurveFaces++;
-
 	int numX = (face.patchSize[0] - 1) / 2;
 	int numY = (face.patchSize[1] - 1) / 2;
 
-	vertexCount = CURVE_SUBDVISIONS * CURVE_SUBDVISIONS * numX * numY;
-	indexCount = ((CURVE_SUBDVISIONS - 1) * (CURVE_SUBDVISIONS - 1) * 6) * numX * numY;
+	vertexCount += CURVE_SUBDVISIONS * CURVE_SUBDVISIONS * numX * numY;
+	indexCount  += ((CURVE_SUBDVISIONS - 1) * (CURVE_SUBDVISIONS - 1) * 6) * numX * numY;
 }
 
-void	Quake3Map::CalculateTotalPatchSize(int& vertexCount, int& indexCount, Q3BSPFace* faces, int faceCount) {
-	int maxVertCount = 0;
-	int maxIndCount = 0;
+void	Quake3Map::CalculateTotalPatchSize(uint32_t& vertexCount, uint32_t& indexCount) {
+	uint32_t extraVertCount	= 0;
+	uint32_t extraIndCount	= 0;
 
-	for (int i = 0; i < faceCount; ++i) {
-		int tempVertCount = 0;
-		int tempIndCount = 0;
-		CalculatePatchSize(tempVertCount, tempIndCount, faces, i);
-		maxVertCount += tempVertCount;
-		maxIndCount += tempIndCount;
+	for (const Q3BSPFace& face : faces) {
+		if (face.type != 2) {
+			continue;
+		}
+		numCountedCurveFaces++;
+		CalculatePatchSize(extraVertCount, extraIndCount, face);
 	}
-	vertexCount = maxVertCount;
-	indexCount = maxIndCount;
+	vertexCount += extraVertCount;
+	indexCount  += extraIndCount;
 }
 
-void Quake3Map::ProcessPatches(Q3BSPFace* faces, int faceCount) {
-	//int currentVertex = 0;
-	//int currentIndex = 0;
+bool Quake3Map::ComputeQuadBezier(int subdivisionLevel, const Q3BSPFace& face,
+	const Q3BSPVertex& cp0, const Q3BSPVertex& cp1, const Q3BSPVertex& cp2,
+	const Q3BSPVertex& cp3, const Q3BSPVertex& cp4, const Q3BSPVertex& cp5,
+	const Q3BSPVertex& cp6, const Q3BSPVertex& cp7, const Q3BSPVertex& cp8,
 
-	//for (int i = 0; i < faceCount; ++i) {
-	//	Q3BSPFace& face = faces[i];
-
-	//	if (face.type != 2) {
-	//		continue;
-	//	}
-	//	Q3BSPVertex* controlPoints = &meshVertices[face.firstVertex];
-
-	//	int numX = (face.patchSize[0] - 1) / 2;
-	//	int numY = (face.patchSize[1] - 1) / 2;
-
-	//	for (int x = 0; x < numX; ++x) {
-	//		for (int y = 0; y < numY; ++y) {
-	//			int startX = x * 2;
-	//			int startY = y * 2;
-
-	//			int row0 = (face.patchSize[0] * startY) + startX;
-
-	//			int row1 = (face.patchSize[0] * (startY + 1)) + startX;
-	//			int row2 = (face.patchSize[0] * (startY + 2)) + startX;
-
-	//			ComputeQuadBezier(CURVE_SUBDVISIONS, face,
-	//				controlPoints[row0], controlPoints[row0 + 1], controlPoints[row0 + 2],
-	//				controlPoints[row1], controlPoints[row1 + 1], controlPoints[row1 + 2],
-	//				controlPoints[row2], controlPoints[row2 + 1], controlPoints[row2 + 2],
-	//				currentVertex, currentIndex,
-	//				&vertices[currentVertex], &normals[currentVertex], &tangents[currentVertex], &textureCoords[currentVertex], &textureCoords2[currentVertex], &indices[currentIndex]
-	//			);
-	//			currentVertex += CURVE_SUBDVISIONS * CURVE_SUBDVISIONS;
-	//			currentIndex += (CURVE_SUBDVISIONS - 1) * (CURVE_SUBDVISIONS - 1) * 6;
-	//		}
-	//	}
-	//	numProcessedCurveFaces++;
-	//}
-}
-
-bool Quake3Map::ComputeQuadBezier(int subdivisionLevel, Q3BSPFace& face,
-	Q3BSPVertex& cp0, Q3BSPVertex& cp1, Q3BSPVertex& cp2,
-	Q3BSPVertex& cp3, Q3BSPVertex& cp4, Q3BSPVertex& cp5,
-	Q3BSPVertex& cp6, Q3BSPVertex& cp7, Q3BSPVertex& cp8,
-	int currentVertex, int currentIndex,
-	Vector3* verts, Vector3* normals, Vector3* tangents, Vector2* texCoords, Vector2* lightCoords, uint32_t* inds
+	Vector3* verts, Vector3* normals, /*Vector3* tangents,*/ Vector2* texCoords, Vector2* lightCoords, uint32_t* inds
 ) {
 
 	Vector3 cp0Pos = Vector3(cp0.position[0], cp0.position[1], cp0.position[2]);
@@ -357,14 +324,13 @@ bool Quake3Map::ComputeQuadBezier(int subdivisionLevel, Q3BSPFace& face,
 			int b = ((x + 1) * (subdivisionLevel)) + z;
 			int c = ((x + 1) * (subdivisionLevel)) + (z + 1);
 			int d = (x * (subdivisionLevel)) + (z + 1);
+			*inds++ = a;
+			*inds++ = d;
+			*inds++ = c;
 
-			*inds++ = currentVertex + a;
-			*inds++ = currentVertex + d;
-			*inds++ = currentVertex + c;
-
-			*inds++ = currentVertex + c;
-			*inds++ = currentVertex + b;
-			*inds++ = currentVertex + a;
+			*inds++ = c;
+			*inds++ = b;
+			*inds++ = a;
 		}
 	}
 	return true;

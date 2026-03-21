@@ -165,23 +165,21 @@ namespace NCL::idTechLoaders {
 			return data;
 		}
 
-		void BuildVertexData(int startVertex, int startIndex);
-		void BuildSubmeshes(int startVertex, int startIndex);
+		void CopyVertexData();
+		void ProcessFaces();
 
-		void ProcessPatches(Q3BSPFace* faces, int faceCount);
-
-		void	CalculateTotalPatchSize(int& vertexCount, int& indexCount, Q3BSPFace* faces, int faceCount);
-		void	CalculatePatchSize(int& vertexCount, int& indexCount, Q3BSPFace* faces, int index);
+		void	CalculateTotalPatchSize(uint32_t& vertexCount, uint32_t& indexCount);
+		void	CalculatePatchSize(uint32_t& vertexCount, uint32_t& indexCount, const Q3BSPFace& face);
 
 		//void ProcessTextures(Q3BSPTexture* textures, int numTextures);
 		//void ProcessLightmaps(Q3BSPLightmap* lightmaps, int numLightmaps);
 
-		bool ComputeQuadBezier(int subdivisionLevel, Q3BSPFace& face,
-			Q3BSPVertex& cp0, Q3BSPVertex& cp1, Q3BSPVertex& cp2,
-			Q3BSPVertex& cp3, Q3BSPVertex& cp4, Q3BSPVertex& cp5,
-			Q3BSPVertex& cp6, Q3BSPVertex& cp7, Q3BSPVertex& cp8,
-			int currentVertex, int currentIndex,
-			Vector3* verts, Vector3* normals, Vector3* tangents, Vector2* texCoords, Vector2* lightCoords, uint32_t* inds
+		bool ComputeQuadBezier(int subdivisionLevel, const Q3BSPFace& face,
+			const Q3BSPVertex& cp0, const Q3BSPVertex& cp1, const Q3BSPVertex& cp2,
+			const Q3BSPVertex& cp3, const Q3BSPVertex& cp4, const Q3BSPVertex& cp5,
+			const Q3BSPVertex& cp6, const Q3BSPVertex& cp7, const Q3BSPVertex& cp8,
+			//int currentVertex, int currentIndex,
+			Vector3* verts, Vector3* normals, /*Vector3* tangents, */Vector2* texCoords, Vector2* lightCoords, uint32_t* inds
 		);
 
 		//void NewDetermineDraws(Camera& c, vector<Q3BSPFace*>& visibleFaces, Matrix4& modelMat);

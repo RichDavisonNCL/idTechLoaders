@@ -135,9 +135,16 @@ namespace NCL::idTechLoaders {
 		unsigned char* data;
 	};
 
+	struct Quake3FaceMaterial {
+		uint32_t diffuseID	= 0;
+		uint32_t lightmapID = 0;
+	};
+
+	typedef std::function<void(char* data, uint32_t x, uint32_t y, uint32_t bpp)> LightmapHandlingFunc;
+
 	class Quake3Map{
 	public:
-		Quake3Map(const std::string& fileName, NCL::Rendering::Mesh* mesh);
+		Quake3Map(const std::string& fileName, NCL::Rendering::Mesh* mesh, LightmapHandlingFunc lightmapHandler);
 		~Quake3Map();
 
 		const NCL::Rendering::Mesh* GetMesh() const {
@@ -146,6 +153,8 @@ namespace NCL::idTechLoaders {
 		bool IsPositionInMap(const Vector3& pos);
 
 		bool BuildVisibleSubmeshList(const Vector3& pos, std::vector<uint32_t>& indices);
+		
+		const std::vector<Quake3FaceMaterial>& GetTextureSet() const { return faceMaterials; }
 
 	protected:
 		NCL::Rendering::Mesh* mesh;
@@ -175,7 +184,8 @@ namespace NCL::idTechLoaders {
 		void	CalculatePatchSize(uint32_t& vertexCount, uint32_t& indexCount, const Q3BSPFace& face);
 
 		//void ProcessTextures(Q3BSPTexture* textures, int numTextures);
-		//void ProcessLightmaps(Q3BSPLightmap* lightmaps, int numLightmaps);
+
+		void ProcessLightmaps(LightmapHandlingFunc handler);
 
 		bool ComputeQuadBezier(int subdivisionLevel, const Q3BSPFace& face,
 			const Q3BSPVertex& cp0, const Q3BSPVertex& cp1, const Q3BSPVertex& cp2,
@@ -189,7 +199,6 @@ namespace NCL::idTechLoaders {
 		
 		//string	TextureFromShaderEntry(string input);
 
-		//const vector<Texture*>& GetTextureSet();
 
 	protected:
 		std::vector<Q3BSPTexture>	textures;
@@ -200,8 +209,12 @@ namespace NCL::idTechLoaders {
 		std::vector<Q3BSPLeafFace>	leafFaces;
 		std::vector<Q3BSPLeafBrush> leafBrushes;
 
+		std::vector<Q3BSPLightmap> lightmaps;
+
 		std::vector<Q3BSPVertex>		meshVertices;
 		std::vector<Q3BSPMeshVertIndex> meshIndices;
+
+		std::vector< Quake3FaceMaterial> faceMaterials;
 
 		Q3BSPVisData	visData;
 

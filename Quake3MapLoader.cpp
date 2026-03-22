@@ -14,7 +14,7 @@ using namespace idTechLoaders;
 
 const int CURVE_SUBDVISIONS = 10;
 
-Quake3Map::Quake3Map(const std::string& fileName, NCL::Rendering::Mesh* inMesh) : mesh(inMesh) {
+Quake3Map::Quake3Map(const std::string& fileName, NCL::Rendering::Mesh* inMesh, LightmapHandlingFunc lightmapHandler) : mesh(inMesh) {
 	std::ifstream f(fileName, std::ifstream::binary);
 
 	if (!f) {
@@ -40,12 +40,14 @@ Quake3Map::Quake3Map(const std::string& fileName, NCL::Rendering::Mesh* inMesh) 
 	meshIndices		= LoadDataChunk<Q3BSPMeshVertIndex>(f, h.entries[11].length, h.entries[11].offset);
 	//Q3BSPEffect* effects = (Q3BSPEffect*)LoadDataChunk(f, h.entries[12].length, h.entries[12].offset);
 	faces		= LoadDataChunk<Q3BSPFace>(f, h.entries[13].length, h.entries[13].offset);
-	//Q3BSPLightmap* lightmaps = (Q3BSPLightmap*)LoadDataChunk(f, h.entries[14].length, h.entries[14].offset);
+
+	lightmaps = LoadDataChunk<Q3BSPLightmap>(f, h.entries[14].length, h.entries[14].offset);
+ 
 	//Q3BSPLightVolume* volumes = (Q3BSPLightVolume*)LoadDataChunk(f, h.entries[15].length, h.entries[15].offset);
 
 	ParseVisDataLump(f, h.entries[16].length, h.entries[16].offset);
 
-	//ProcessLightmaps(lightmaps, h.entries[14].length / sizeof(Q3BSPLightmap));
+	ProcessLightmaps(lightmapHandler);
 	//ProcessTextures(textures, h.entries[1].length / sizeof(Q3BSPTexture));
 
 	uint32_t numVertices = meshVertices.size();
@@ -58,6 +60,7 @@ Quake3Map::Quake3Map(const std::string& fileName, NCL::Rendering::Mesh* inMesh) 
 	vCol.resize(numVertices);
 	vTex.resize(numVertices);
 	vTex2.resize(numVertices);
+
 	indices.resize(numIndices);
 
 	CopyVertexData();
@@ -68,6 +71,14 @@ Quake3Map::Quake3Map(const std::string& fileName, NCL::Rendering::Mesh* inMesh) 
 	mesh->SetVertexNormals(vNorm);
 	mesh->SetVertexColours(vCol);
 	mesh->SetVertexTextureCoords(vTex);
+
+	std::vector<Vector4> generics;
+	generics.resize(vTex2.size());
+	for (int i = 0; i < vTex2.size(); ++i) {
+		generics[i].x = vTex2[i].x;
+		generics[i].y = vTex2[i].y;
+	}
+	mesh->SetVertexGenericVec4s(generics);
 
 	mesh->SetVertexIndices(indices);
 
@@ -111,6 +122,8 @@ void Quake3Map::ProcessFaces() {
 	//new verts/inds from beziers get tacked onto the end of the vertex list
 	int vOffset = meshVertices.size();
 	int iOffset = meshIndices.size();
+
+	faceMaterials.resize(faces.size());
 
 	for (int f = 0; f < faces.size(); ++f) {
 		Q3BSPFace& face = faces[f];
@@ -161,15 +174,13 @@ void Quake3Map::ProcessFaces() {
 			iOffset += iCount;
 		}
 		else {//Normal face			
-			// I think this was my index hack...
-			//for (int j = face.firstVertex; j < face.firstVertex + face.numVertices; ++j) {
-			//	vTex2[j].y += (face.lightmapIndex + 1);
-			//}
 			//Standard faces have their verts in the initial vector
 			newSubMesh.start	= face.firstIndex;
 			newSubMesh.count	= face.numIndices;
 			newSubMesh.base		= face.firstVertex;
 		}
+		faceMaterials[f].lightmapID = face.lightmapIndex;
+		faceMaterials[f].diffuseID  = face.texture;
 
 		mesh->AddSubMesh(newSubMesh);
 	}
@@ -413,6 +424,12 @@ bool Quake3Map::BuildVisibleSubmeshList(const Vector3& pos, std::vector<uint32_t
 	return true;
 }
 
+void Quake3Map::ProcessLightmaps(LightmapHandlingFunc lightmapHandler) {
+	for (const Q3BSPLightmap& lm : lightmaps) {
+		lightmapHandler((char*)lm.data, 128, 128, 3);
+	}
+}
+
 //void Quake3Map::ProcessTextures(Q3BSPTexture* textures, int numTextures) {
 //	vector<string> fileTextures;
 //
@@ -463,15 +480,6 @@ bool Quake3Map::BuildVisibleSubmeshList(const Vector3& pos, std::vector<uint32_t
 //
 //}
 //
-//void Quake3Map::ProcessLightmaps(Q3BSPLightmap* lightmaps, int numLightmaps) {
-//	vector<unsigned char*> mapDatas;
-//	for (int i = 0; i < numLightmaps; ++i) {
-//		unsigned char* data = (unsigned char*)&lightmaps[i].data;
-//		mapDatas.push_back(data);
-//	}
-//	this->lightmaps = TextureManager::Instance().AddTextureArray("MapLightmaps", mapDatas, 128, 128, 3);
-//}
-
 //string	Quake3Map::TextureFromShaderEntry(string input) {
 //	//first off, need to get the sub folder
 //	string subFolder;

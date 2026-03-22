@@ -64,16 +64,14 @@ Quake3Map::Quake3Map(const std::string& fileName, NCL::Rendering::Mesh* inMesh) 
 	ProcessFaces();
 	f.close();
 
-	visibleFaceIndices = new int[faces.size()];
-
-	ComputeMaximumSizes();
-
 	mesh->SetVertexPositions(vPos);
 	mesh->SetVertexNormals(vNorm);
 	mesh->SetVertexColours(vCol);
 	mesh->SetVertexTextureCoords(vTex);
 
 	mesh->SetVertexIndices(indices);
+
+	visibleFaces.resize((faces.size() / 8) + 1);
 }
 
 Quake3Map::~Quake3Map() {
@@ -121,7 +119,6 @@ void Quake3Map::ProcessFaces() {
 
 		if (face.type == 2) {
 			//Bezier face
-			//We need to create some new verts/inds to represent the curve
 			 
 			uint32_t vCount = 0;
 			uint32_t iCount = 0;
@@ -183,13 +180,15 @@ void Quake3Map::ProcessFaces() {
 
 void Quake3Map::CopyVertexData() {
 	for (int i = 0; i < meshIndices.size(); ++i) {
-		indices[i] = meshIndices[	i].offset;
+		indices[i] = meshIndices[i].offset;
 	}
 
 	for (int i = 0; i < meshVertices.size(); ++i) {
 		Q3BSPVertex& v = meshVertices[i];
 
-		vPos[i]		= Vector3(v.position[0], v.position[2], -v.position[1]);
+		//vPos[i]		= Vector3(v.position[0], v.position[2], -v.position[1]);
+		vPos[i]		= Vector3(v.position[0], v.position[1], v.position[2]);
+
 		vNorm[i]	= Vector3(v.normal[0], v.normal[2], -v.normal[1]);
 		vCol[i]		= Vector4(v.colour[0] / 255.0f, v.colour[1] / 255.0f, v.colour[2] / 255.0f, v.colour[3] / 255.0f);
 
@@ -311,10 +310,13 @@ bool Quake3Map::ComputeQuadBezier(int subdivisionLevel, const Q3BSPFace& face,
 
 			tLight.y += (face.lightmapIndex + 1);
 
-			*verts++ = Vector3(tPos.x, tPos.z, -tPos.y);
-			*normals++ = Vector3(tNorm.x, tNorm.z, -tNorm.y);
-			*texCoords++ = tTex;
-			*lightCoords++ = tLight;
+			//*verts++		= Vector3(tPos.x, tPos.z, -tPos.y);
+
+			*verts++ = Vector3(tPos.x, tPos.y, tPos.z);
+
+			*normals++		= Vector3(tNorm.x, tNorm.z, -tNorm.y);
+			*texCoords++	= tTex;
+			*lightCoords++	= tLight;
 		}
 	}
 
@@ -336,33 +338,22 @@ bool Quake3Map::ComputeQuadBezier(int subdivisionLevel, const Q3BSPFace& face,
 	return true;
 }
 
-int	Quake3Map::FindLeaf(const Vector3& pos) {
-	//Plane p;
-
-	int index = 0; //leaves of the tree have negative indices
+int	Quake3Map::FindBSPLeaf(const Vector3& pos) {
+	int index = 0; 
 
 	Vector3 transPos(pos.x, -pos.z, pos.y);
 
-	int iterations = 0;
+	transPos = pos;
 
-	while (index >= 0) {
-		const Q3BSPNode& node = nodes[index];
-		const Q3BSPPlane& bspp = planes[node.planeIndex];
+	while (index >= 0) {//leaves of the tree have negative indices
+		const Q3BSPNode&  node	= nodes[index];
+		const Q3BSPPlane& bspp	= planes[node.planeIndex];
 
-		//*shrugs*
 		float dist = Vector::Dot(Vector3(bspp.x, bspp.y, bspp.z), transPos) - bspp.d;
 
-		iterations++;
-
-		if (dist >= 0) {
-			index = node.children[0];
-		}
-		else {
-			index = node.children[1];
-		}
+		index = (dist > 0) ? node.children[0] : node.children[1];
 	}
-
-	return -index - 1;
+	return ~index;
 }
 
 bool Quake3Map::ClusterVisible(int sourceCluster, int destCluster) {
@@ -370,100 +361,63 @@ bool Quake3Map::ClusterVisible(int sourceCluster, int destCluster) {
 		return true;
 	}
 
-	int destStart = sourceCluster * visData.vectorSize;
+	int destStart	= sourceCluster * visData.vectorSize;
 
-	int destByte = destCluster / 8; //can bitshift right 3...
+	int destByte	= destCluster / 8;
 
-	int destBit = destCluster % 8;
+	int destBit		= destCluster % 8;
 
-	char mask = 1 << destBit;
-
-	int check = visData.data[destStart + destByte] & mask;
+	int check = visData.data[destStart + destByte] & (1 << destBit);
 
 	return (check > 0);
 }
 
-int	Quake3Map::FindLeafByAABB(const Vector3& pos) {
-	Vector3 transPos(pos.x, -pos.z, pos.y);
-
-	for (int i = 0; i < leaves.size(); ++i) {
-		Q3BSPLeaf& l = leaves[i];
-
-		if (l.cluster == -1) {
-			continue;
-		}
-
-		bool outside = false;
-
-		for (int j = 0; j < 3; ++j) {
-			if (transPos[j] < l.mins[j] || transPos[j] > l.maxs[j]) { //within x bounds
-				outside = true;
-				break;
-			}
-		}
-
-		if (outside) {
-			continue;
-		}
-
-		Vector3 mins((float)l.mins[0], (float)l.mins[2], (float)-l.mins[1]);
-		Vector3 maxs((float)l.maxs[0], (float)l.maxs[2], (float)-l.maxs[1]);
-
-		return i;
-	}
-	return -1;
+bool Quake3Map::IsPositionInMap(const Vector3& pos) {
+	int index = FindBSPLeaf(pos);
+	Q3BSPLeaf& camLeaf = leaves[index];
+	return (index >= 0 && camLeaf.cluster >= 0);
 }
 
-void	Quake3Map::ComputeMaximumSizes() {
-	maxIndexCount = 0;
-	maxLeafCount = 0;
+void Quake3Map::BuildVisibleSubmeshList(const Vector3& pos, std::vector<uint32_t>& indices) {
+	const Q3BSPLeaf& camLeaf = leaves[FindBSPLeaf(pos)];
+
+	if (camLeaf.cluster < 0) {
+		return;
+	}
+
+	memset(visibleFaces.data(), 0, visibleFaces.size());
+	uint32_t lowByte	= INT_MAX;
+	uint32_t highByte	= 0;
 
 	for (int i = 0; i < leaves.size(); ++i) {
-		Q3BSPLeaf& testLeaf = leaves[i];
-		int tempCount = 0;
-		int tempLeafCount = 0;
-
+		const Q3BSPLeaf& testLeaf = leaves[i];
 		if (testLeaf.cluster < 0) {
 			continue;
 		}
+		if (ClusterVisible(camLeaf.cluster, testLeaf.cluster)) {
+			for (int j = 0; j < testLeaf.numLeafFace; ++j) {
+				int actualFace = leafFaces[testLeaf.firstLeafFace + j].faceIndex;
 
-		for (int j = 0; j < leaves.size(); ++j) {
-			Q3BSPLeaf& innerLeaf = leaves[j];
+				uint32_t faceByte = actualFace / 8;
+				uint32_t faceBit  = actualFace % 8;
 
-			if (i == j) {
-				continue;
-			}
+				visibleFaces[faceByte] |= (1 << faceBit);
 
-			if (innerLeaf.cluster < 0) {
-				continue;
-			}
-
-			bool visible = ClusterVisible(testLeaf.cluster, innerLeaf.cluster);
-
-			if (visible) {
-				tempCount += innerLeaf.numLeafFace;
-				tempLeafCount++;
+				lowByte		= std::min(faceByte, lowByte);
+				highByte	= std::max(faceByte, highByte);
 			}
 		}
-		maxIndexCount = std::max(maxIndexCount, (unsigned int)tempLeafCount);
-		maxLeafCount = std::max(maxLeafCount, (unsigned int)tempCount);
 	}
-
-	int tempFix = std::max(maxIndexCount, maxLeafCount);
-
-	maxIndexCount = tempFix;
-	maxLeafCount = tempFix;
-}
-
-bool Quake3Map::IsPositionInMap(const Vector3& pos) {
-	int index = FindLeaf(pos);
-
-	Q3BSPLeaf& camLeaf = leaves[index];
-
-	if (index >= 0) {
-		return true;
+	for (int i = lowByte; i < highByte; ++i) {
+		char data = visibleFaces[i];
+		if (data) {
+			for (int j = 0; j < 8; ++j) {
+				if (data & (1 << j)) {
+					indices.push_back((i * 8) + j);
+				}
+			}
+		}
 	}
-	return false;
 }
 
 //void Quake3Map::ProcessTextures(Q3BSPTexture* textures, int numTextures) {
@@ -523,61 +477,6 @@ bool Quake3Map::IsPositionInMap(const Vector3& pos) {
 //		mapDatas.push_back(data);
 //	}
 //	this->lightmaps = TextureManager::Instance().AddTextureArray("MapLightmaps", mapDatas, 128, 128, 3);
-//}
-
-//void Quake3Map::NewDetermineDraws(Camera& c, vector<Q3BSPFace*>& visibleFaces, Matrix4& modelMat) {
-//	lowVisibleFace = INT_MAX;
-//	highVisibleFace = INT_MIN;
-//	visibleFaceClock++;
-//
-//	Vector4 relativePos = Vector4(c.GetPosition(), 1.0f);
-//
-//	relativePos = modelMat.Inverse() * relativePos;
-//
-//	AABB	box;
-//	Frustum camFrustum;
-//
-//	camFrustum.FromMatrix(c.GetProjectionMatrix() * c.BuildViewMatrix() * modelMat);
-//
-//	int camLeafIndex = FindLeaf(relativePos.ToVector3());
-//
-//	Q3BSPLeaf& camLeaf = leaves[camLeafIndex];
-//
-//	for (int i = 0; i < numLeaves; ++i) {
-//		Q3BSPLeaf& testLeaf = leaves[i];
-//
-//		if (camLeaf.cluster < 0 || testLeaf.cluster < 0) {
-//			continue;
-//		}
-//
-//		bool visible = ClusterVisible(camLeaf.cluster, testLeaf.cluster);
-//
-//		if (visible) {
-//			int f = testLeaf.firstLeafFace;
-//			int lf = testLeaf.numLeafFace;
-//
-//			Vector3 mins((float)testLeaf.mins[0], (float)testLeaf.mins[2], (float)-testLeaf.mins[1]);
-//			Vector3 maxs((float)testLeaf.maxs[0], (float)testLeaf.maxs[2], (float)-testLeaf.maxs[1]);
-//
-//			box.SetBoundsByMinMax(mins, maxs);
-//
-//			if (camFrustum.InsideFrustum(box)) {
-//				for (int j = 0; j < lf; ++j) {
-//					int actualFace = leafFaces[f + j].faceIndex;
-//
-//					lowVisibleFace = std::min(lowVisibleFace, actualFace);
-//					highVisibleFace = std::max(highVisibleFace, actualFace);
-//
-//					visibleFaceIndices[actualFace] = visibleFaceClock;
-//				}
-//			}
-//		}
-//	}
-//	for (int i = lowVisibleFace; i < highVisibleFace; ++i) {
-//		if (visibleFaceIndices[i] == visibleFaceClock) {
-//			visibleFaces.push_back(&faces[i]);
-//		}
-//	}
 //}
 
 //string	Quake3Map::TextureFromShaderEntry(string input) {

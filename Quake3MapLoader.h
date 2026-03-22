@@ -143,6 +143,9 @@ namespace NCL::idTechLoaders {
 		const NCL::Rendering::Mesh* GetMesh() const {
 			return mesh;
 		}
+		bool IsPositionInMap(const Vector3& pos);
+
+		void BuildVisibleSubmeshList(const Vector3& pos, std::vector<uint32_t>& indices);
 
 	protected:
 		NCL::Rendering::Mesh* mesh;
@@ -178,20 +181,12 @@ namespace NCL::idTechLoaders {
 			const Q3BSPVertex& cp0, const Q3BSPVertex& cp1, const Q3BSPVertex& cp2,
 			const Q3BSPVertex& cp3, const Q3BSPVertex& cp4, const Q3BSPVertex& cp5,
 			const Q3BSPVertex& cp6, const Q3BSPVertex& cp7, const Q3BSPVertex& cp8,
-			//int currentVertex, int currentIndex,
 			Vector3* verts, Vector3* normals, /*Vector3* tangents, */Vector2* texCoords, Vector2* lightCoords, uint32_t* inds
 		);
 
-		//void NewDetermineDraws(Camera& c, vector<Q3BSPFace*>& visibleFaces, Matrix4& modelMat);
-
-		int	FindLeaf(const Vector3& pos);
-		int	FindLeafByAABB(const Vector3& pos);
-
-		bool ClusterVisible(int sourceCluster, int destCluster);
-		bool IsPositionInMap(const Vector3& pos);
-
-		void	ComputeMaximumSizes();
-
+		int		FindBSPLeaf(const Vector3& pos);
+		bool	ClusterVisible(int sourceCluster, int destCluster);
+		
 		//string	TextureFromShaderEntry(string input);
 
 		//const vector<Texture*>& GetTextureSet();
@@ -217,15 +212,9 @@ namespace NCL::idTechLoaders {
 		std::vector<Vector2>	vTex2;
 		std::vector<uint32_t>	indices;
 
-		int* visibleFaceIndices;
-		int  lowVisibleFace;
-		int	 highVisibleFace;
-		int  visibleFaceClock;
-
-		unsigned int maxIndexCount;
-		unsigned int maxLeafCount;
-
 		int numCountedCurveFaces	= 0;
 		int numProcessedCurveFaces	= 0;
+
+		std::vector<char> visibleFaces;
 	};
 }

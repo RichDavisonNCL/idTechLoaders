@@ -117,9 +117,7 @@ void Quake3Map::ProcessFaces() {
 
 		SubMesh newSubMesh;
 
-		if (face.type == 2) {
-			//Bezier face
-			 
+		if (face.type == 2) {	//Bezier face	 
 			uint32_t vCount = 0;
 			uint32_t iCount = 0;
 
@@ -162,13 +160,12 @@ void Quake3Map::ProcessFaces() {
 			vOffset += vCount;
 			iOffset += iCount;
 		}
-		else {
-			//Normal face
+		else {//Normal face			
 			// I think this was my index hack...
 			//for (int j = face.firstVertex; j < face.firstVertex + face.numVertices; ++j) {
 			//	vTex2[j].y += (face.lightmapIndex + 1);
 			//}
-			//Standard faces have their verts in the initial ver
+			//Standard faces have their verts in the initial vector
 			newSubMesh.start	= face.firstIndex;
 			newSubMesh.count	= face.numIndices;
 			newSubMesh.base		= face.firstVertex;
@@ -186,8 +183,7 @@ void Quake3Map::CopyVertexData() {
 	for (int i = 0; i < meshVertices.size(); ++i) {
 		Q3BSPVertex& v = meshVertices[i];
 
-		//vPos[i]		= Vector3(v.position[0], v.position[2], -v.position[1]);
-		vPos[i]		= Vector3(v.position[0], v.position[1], v.position[2]);
+		vPos[i]		= Vector3(v.position[0], v.position[2], -v.position[1]);
 
 		vNorm[i]	= Vector3(v.normal[0], v.normal[2], -v.normal[1]);
 		vCol[i]		= Vector4(v.colour[0] / 255.0f, v.colour[1] / 255.0f, v.colour[2] / 255.0f, v.colour[3] / 255.0f);
@@ -310,9 +306,7 @@ bool Quake3Map::ComputeQuadBezier(int subdivisionLevel, const Q3BSPFace& face,
 
 			tLight.y += (face.lightmapIndex + 1);
 
-			//*verts++		= Vector3(tPos.x, tPos.z, -tPos.y);
-
-			*verts++ = Vector3(tPos.x, tPos.y, tPos.z);
+			*verts++		= Vector3(tPos.x, tPos.z, -tPos.y);
 
 			*normals++		= Vector3(tNorm.x, tNorm.z, -tNorm.y);
 			*texCoords++	= tTex;
@@ -342,8 +336,6 @@ int	Quake3Map::FindBSPLeaf(const Vector3& pos) {
 	int index = 0; 
 
 	Vector3 transPos(pos.x, -pos.z, pos.y);
-
-	transPos = pos;
 
 	while (index >= 0) {//leaves of the tree have negative indices
 		const Q3BSPNode&  node	= nodes[index];
@@ -378,11 +370,11 @@ bool Quake3Map::IsPositionInMap(const Vector3& pos) {
 	return (index >= 0 && camLeaf.cluster >= 0);
 }
 
-void Quake3Map::BuildVisibleSubmeshList(const Vector3& pos, std::vector<uint32_t>& indices) {
+bool Quake3Map::BuildVisibleSubmeshList(const Vector3& pos, std::vector<uint32_t>& indices) {
 	const Q3BSPLeaf& camLeaf = leaves[FindBSPLeaf(pos)];
 
 	if (camLeaf.cluster < 0) {
-		return;
+		return false;
 	}
 
 	memset(visibleFaces.data(), 0, visibleFaces.size());
@@ -418,6 +410,7 @@ void Quake3Map::BuildVisibleSubmeshList(const Vector3& pos, std::vector<uint32_t
 			}
 		}
 	}
+	return true;
 }
 
 //void Quake3Map::ProcessTextures(Q3BSPTexture* textures, int numTextures) {

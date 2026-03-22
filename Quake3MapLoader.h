@@ -145,7 +145,7 @@ namespace NCL::idTechLoaders {
 		}
 		bool IsPositionInMap(const Vector3& pos);
 
-		void BuildVisibleSubmeshList(const Vector3& pos, std::vector<uint32_t>& indices);
+		bool BuildVisibleSubmeshList(const Vector3& pos, std::vector<uint32_t>& indices);
 
 	protected:
 		NCL::Rendering::Mesh* mesh;

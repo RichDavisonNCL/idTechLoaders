@@ -183,15 +183,16 @@ namespace NCL::idTechLoaders {
 		void	CalculateTotalPatchSize(uint32_t& vertexCount, uint32_t& indexCount);
 		void	CalculatePatchSize(uint32_t& vertexCount, uint32_t& indexCount, const Q3BSPFace& face);
 
-		//void ProcessTextures(Q3BSPTexture* textures, int numTextures);
+		//void ProcessTextures();
 
 		void ProcessLightmaps(LightmapHandlingFunc handler);
 
-		bool ComputeQuadBezier(int subdivisionLevel, const Q3BSPFace& face,
+		bool ComputeQuadBezier(int subdivisionLevel,
 			const Q3BSPVertex& cp0, const Q3BSPVertex& cp1, const Q3BSPVertex& cp2,
 			const Q3BSPVertex& cp3, const Q3BSPVertex& cp4, const Q3BSPVertex& cp5,
 			const Q3BSPVertex& cp6, const Q3BSPVertex& cp7, const Q3BSPVertex& cp8,
-			Vector3* verts, Vector3* normals, /*Vector3* tangents, */Vector2* texCoords, Vector2* lightCoords, uint32_t* inds
+			uint32_t indexOffset, 
+			Vector3* verts, Vector3* normals, Vector2* texCoords, Vector2* lightCoords, uint32_t* inds
 		);
 
 		int		FindBSPLeaf(const Vector3& pos);
@@ -199,9 +200,7 @@ namespace NCL::idTechLoaders {
 		
 		//string	TextureFromShaderEntry(string input);
 
-
 	protected:
-		std::vector<Q3BSPTexture>	textures;
 		std::vector<Q3BSPNode>		nodes;
 		std::vector<Q3BSPLeaf>		leaves;
 		std::vector<Q3BSPPlane>		planes;
@@ -209,7 +208,8 @@ namespace NCL::idTechLoaders {
 		std::vector<Q3BSPLeafFace>	leafFaces;
 		std::vector<Q3BSPLeafBrush> leafBrushes;
 
-		std::vector<Q3BSPLightmap> lightmaps;
+		std::vector<Q3BSPTexture>	textures;
+		std::vector<Q3BSPLightmap>	lightmaps;
 
 		std::vector<Q3BSPVertex>		meshVertices;
 		std::vector<Q3BSPMeshVertIndex> meshIndices;

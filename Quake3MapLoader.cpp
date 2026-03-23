@@ -33,22 +33,23 @@ Quake3Map::Quake3Map(const std::string& fileName, NCL::Rendering::Mesh* inMesh, 
 	leaves		= LoadDataChunk<Q3BSPLeaf>(f, h.entries[4].length, h.entries[4].offset);
 	leafFaces	= LoadDataChunk<Q3BSPLeafFace>(f, h.entries[5].length, h.entries[5].offset);
 	leafBrushes = LoadDataChunk<Q3BSPLeafBrush>(f, h.entries[6].length, h.entries[6].offset);
+
+	meshVertices= LoadDataChunk<Q3BSPVertex>(f, h.entries[10].length, h.entries[10].offset);
+	meshIndices	= LoadDataChunk<Q3BSPMeshVertIndex>(f, h.entries[11].length, h.entries[11].offset);
+	
+	faces		= LoadDataChunk<Q3BSPFace>(f, h.entries[13].length, h.entries[13].offset);
+
+	lightmaps	= LoadDataChunk<Q3BSPLightmap>(f, h.entries[14].length, h.entries[14].offset);
+ 
+	//Q3BSPLightVolume* volumes = (Q3BSPLightVolume*)LoadDataChunk(f, h.entries[15].length, h.entries[15].offset);
+	//Q3BSPEffect* effects = (Q3BSPEffect*)LoadDataChunk(f, h.entries[12].length, h.entries[12].offset);	
 	//Q3BSPModel* models = (Q3BSPModel*)LoadDataChunk(f, h.entries[7].length, h.entries[7].offset);
 	//Q3BSPBrush* brushes = (Q3BSPBrush*)LoadDataChunk(f, h.entries[8].length, h.entries[8].offset);
 	//Q3BSPBrushSide* brushSides = (Q3BSPBrushSide*)LoadDataChunk(f, h.entries[9].length, h.entries[9].offset);
-	meshVertices	= LoadDataChunk<Q3BSPVertex>(f, h.entries[10].length, h.entries[10].offset);
-	meshIndices		= LoadDataChunk<Q3BSPMeshVertIndex>(f, h.entries[11].length, h.entries[11].offset);
-	//Q3BSPEffect* effects = (Q3BSPEffect*)LoadDataChunk(f, h.entries[12].length, h.entries[12].offset);
-	faces		= LoadDataChunk<Q3BSPFace>(f, h.entries[13].length, h.entries[13].offset);
-
-	lightmaps = LoadDataChunk<Q3BSPLightmap>(f, h.entries[14].length, h.entries[14].offset);
- 
-	//Q3BSPLightVolume* volumes = (Q3BSPLightVolume*)LoadDataChunk(f, h.entries[15].length, h.entries[15].offset);
-
 	ParseVisDataLump(f, h.entries[16].length, h.entries[16].offset);
 
 	ProcessLightmaps(lightmapHandler);
-	//ProcessTextures(textures, h.entries[1].length / sizeof(Q3BSPTexture));
+	//ProcessTextures();
 
 	uint32_t numVertices = meshVertices.size();
 	uint32_t numIndices  = meshIndices.size(); 
@@ -67,6 +68,7 @@ Quake3Map::Quake3Map(const std::string& fileName, NCL::Rendering::Mesh* inMesh, 
 	ProcessFaces();
 	f.close();
 
+	mesh->SetVertexIndices(indices);
 	mesh->SetVertexPositions(vPos);
 	mesh->SetVertexNormals(vNorm);
 	mesh->SetVertexColours(vCol);
@@ -80,8 +82,6 @@ Quake3Map::Quake3Map(const std::string& fileName, NCL::Rendering::Mesh* inMesh, 
 	}
 	mesh->SetVertexGenericVec4s(generics);
 
-	mesh->SetVertexIndices(indices);
-
 	visibleFaces.resize((faces.size() / 8) + 1);
 }
 
@@ -94,7 +94,6 @@ void Quake3Map::ParseEntityLump(std::ifstream& f, int size, int offset) {
 	if (size == 0) {
 		return;
 	}
-	//TODO: the data array ends up with lots of 0s in it, makes parsing a pain...
 	char* data = new char[size];
 
 	f.read(data, size);
@@ -146,35 +145,38 @@ void Quake3Map::ProcessFaces() {
 			int numX = (face.patchSize[0] - 1) / 2;
 			int numY = (face.patchSize[1] - 1) / 2;
 
-			uint32_t vertOffset = vOffset;
-			uint32_t indexOffset = iOffset;
+			uint32_t vertOffset		= 0;
+			uint32_t indexOffset	= 0;
 
 			for (int x = 0; x < numX; ++x) {
 				for (int y = 0; y < numY; ++y) {
 					int startX = x * 2;
 					int startY = y * 2;
 
-					int row0 = (face.patchSize[0] * startY) + startX;
-
+					int row0 = (face.patchSize[0] * (startY + 0)) + startX;
 					int row1 = (face.patchSize[0] * (startY + 1)) + startX;
 					int row2 = (face.patchSize[0] * (startY + 2)) + startX;
 
-					ComputeQuadBezier(CURVE_SUBDVISIONS, face,
+					ComputeQuadBezier(CURVE_SUBDVISIONS,
 						controlPoints[row0], controlPoints[row0 + 1], controlPoints[row0 + 2],
 						controlPoints[row1], controlPoints[row1 + 1], controlPoints[row1 + 2],
 						controlPoints[row2], controlPoints[row2 + 1], controlPoints[row2 + 2],
-						&vPos[vertOffset], &vNorm[vertOffset]/*, &tangents[currentVertex]*/, &vTex[vertOffset], &vTex2[vertOffset], &indices[indexOffset]
+						vertOffset,
+						&vPos[vOffset + vertOffset], 
+						&vNorm[vOffset + vertOffset], 
+						&vTex[vOffset + vertOffset],
+						&vTex2[vOffset + vertOffset],
+						&indices[iOffset + indexOffset]
 					);
 					vertOffset  += CURVE_SUBDVISIONS * CURVE_SUBDVISIONS;
 					indexOffset += (CURVE_SUBDVISIONS - 1) * (CURVE_SUBDVISIONS - 1) * 6;
 				}
 			}
-			numProcessedCurveFaces++;
 			vOffset += vCount;
 			iOffset += iCount;
+			numProcessedCurveFaces++;
 		}
-		else {//Normal face			
-			//Standard faces have their verts in the initial vector
+		else {//Normal face. Verts in the initial vector from file
 			newSubMesh.start	= face.firstIndex;
 			newSubMesh.count	= face.numIndices;
 			newSubMesh.base		= face.firstVertex;
@@ -199,8 +201,8 @@ void Quake3Map::CopyVertexData() {
 		vNorm[i]	= Vector3(v.normal[0], v.normal[2], -v.normal[1]);
 		vCol[i]		= Vector4(v.colour[0] / 255.0f, v.colour[1] / 255.0f, v.colour[2] / 255.0f, v.colour[3] / 255.0f);
 
-		vTex[i]		= Vector2(v.diffuseTex[0], v.diffuseTex[1]);
-		vTex2[i]	= Vector2(v.lightmapTex[0], v.lightmapTex[1]);
+		vTex[i]		= Vector2(v.diffuseTex[0]	, v.diffuseTex[1]);
+		vTex2[i]	= Vector2(v.lightmapTex[0]	, v.lightmapTex[1]);
 	}
 }
 
@@ -230,12 +232,12 @@ void	Quake3Map::CalculateTotalPatchSize(uint32_t& vertexCount, uint32_t& indexCo
 	indexCount  += extraIndCount;
 }
 
-bool Quake3Map::ComputeQuadBezier(int subdivisionLevel, const Q3BSPFace& face,
+bool Quake3Map::ComputeQuadBezier(int subdivisionLevel,
 	const Q3BSPVertex& cp0, const Q3BSPVertex& cp1, const Q3BSPVertex& cp2,
 	const Q3BSPVertex& cp3, const Q3BSPVertex& cp4, const Q3BSPVertex& cp5,
 	const Q3BSPVertex& cp6, const Q3BSPVertex& cp7, const Q3BSPVertex& cp8,
-
-	Vector3* verts, Vector3* normals, /*Vector3* tangents,*/ Vector2* texCoords, Vector2* lightCoords, uint32_t* inds
+	uint32_t indexOffset,
+	Vector3* verts, Vector3* normals, Vector2* texCoords, Vector2* lightCoords, uint32_t* inds
 ) {
 
 	Vector3 cp0Pos = Vector3(cp0.position[0], cp0.position[1], cp0.position[2]);
@@ -315,8 +317,6 @@ bool Quake3Map::ComputeQuadBezier(int subdivisionLevel, const Q3BSPFace& face,
 			Vector2 tTex	= EvaluateQuadraticBezier(t, s1Tex, s2Tex, s3Tex);
 			Vector2 tLight	= EvaluateQuadraticBezier(t, s1Light, s2Light, s3Light);
 
-			tLight.y += (face.lightmapIndex + 1);
-
 			*verts++		= Vector3(tPos.x, tPos.z, -tPos.y);
 
 			*normals++		= Vector3(tNorm.x, tNorm.z, -tNorm.y);
@@ -331,13 +331,13 @@ bool Quake3Map::ComputeQuadBezier(int subdivisionLevel, const Q3BSPFace& face,
 			int b = ((x + 1) * (subdivisionLevel)) + z;
 			int c = ((x + 1) * (subdivisionLevel)) + (z + 1);
 			int d = (x * (subdivisionLevel)) + (z + 1);
-			*inds++ = a;
-			*inds++ = d;
-			*inds++ = c;
+			*inds++ = (indexOffset) + a;
+			*inds++ = (indexOffset) + d;
+			*inds++ = (indexOffset) + c;
 
-			*inds++ = c;
-			*inds++ = b;
-			*inds++ = a;
+			*inds++ = (indexOffset) + c;
+			*inds++ = (indexOffset) + b;
+			*inds++ = (indexOffset) + a;
 		}
 	}
 	return true;
@@ -430,10 +430,10 @@ void Quake3Map::ProcessLightmaps(LightmapHandlingFunc lightmapHandler) {
 	}
 }
 
-//void Quake3Map::ProcessTextures(Q3BSPTexture* textures, int numTextures) {
+//void Quake3Map::ProcessTextures() {
 //	vector<string> fileTextures;
 //
-//	for (int i = 0; i < numTextures; ++i) {
+//	for (int i = 0; i < textures.size(); ++i) {
 //		Q3BSPTexture& t = textures[i];
 //
 //		string s((char*)&t.name);
@@ -542,10 +542,6 @@ void Quake3Map::ProcessLightmaps(LightmapHandlingFunc lightmapHandler) {
 //		}
 //	}
 //	return subFolder;
-//}
-
-//const vector<Texture*>& Quake3Map::GetTextureSet() {
-//	return loadedTextures;
 //}
 
 //void	Quake3Map::DebugDrawNodes() {
